@@ -32,7 +32,7 @@ namespace sjtu {
         struct leafNode                     //叶子结点
         {
             short dataSize;                 //数据数量
-            bool isdelete;                  //块是否从文件中删除
+            /*bool isdelete;                  //块是否从文件中删除*/
             offset_t nodeOffset;
             offset_t next;
             offset_t pre;
@@ -51,15 +51,13 @@ namespace sjtu {
         struct interNode                    //内部结点
         {
             short dataSize;
-            bool isdelete;                  //块是否从文件中删除
+            /*bool isdelete;                  //块是否从文件中删除*/
             offset_t offset;
-            offset_t next;
-            offset_t pre;
             offset_t parent;
             bool isLeaf;                    //孩子是否为叶子结点
             dataNodeInter data[500];       //pair数
 
-            interNode():offset(0),next(0),pre(0),parent(0),isLeaf(0){}
+            interNode():offset(0),parent(0),isLeaf(0){}
         };
 
     private:
@@ -103,11 +101,11 @@ namespace sjtu {
             pFile.seekg(offset,std::ios::cur);
             if (!pFile.fail()) {
                 pFile.close();
-                return 0;
+                return false;
             }
             pFile.read(rwBuffer,MAXN);
             memcpy(p,rwBuffer, sizeof(leafNode));
-            return 1;
+            return true;
         }
 
         /**readInter():
@@ -120,11 +118,11 @@ namespace sjtu {
             pFile.seekg(offset,std::ios::cur);
             if (!pFile.fail()) {
                 pFile.close();
-                return 0;
+                return false;
             }
             pFile.read(rwBuffer,MAXN);
             memcpy(p,rwBuffer, sizeof(interNode));
-            return 1;
+            return true;
         }
 
         /**writeLeaf():
@@ -140,13 +138,13 @@ namespace sjtu {
             p->nodeOffset = offset;
             if (pFile.fail()) {
                 pFile.close();
-                return 0;
+                return false;
             }
             pFile.seekp(offset);
             memcpy(rwBuffer,p, sizeof(leafNode));
             pFile.write(rwBuffer, sizeof(char)*MAXN);
             pFile.flush();
-            return 1;
+            return true;
         }
 
         /**writeInter():
@@ -162,13 +160,13 @@ namespace sjtu {
             p->nodeOffset = offset;
             if (pFile.fail()) {
                 pFile.close();
-                return 0;
+                return true;
             }
             pFile.seekp(offset);
             memcpy(rwBuffer,p, sizeof(interNode));
             pFile.write(rwBuffer, sizeof(char)*MAXN);
             pFile.flush();
-            return 1;
+            return false;
         }
 //===========================================file operation======================================//
 
@@ -199,11 +197,8 @@ namespace sjtu {
             }
 
             iterator(const iterator& other) {
-                if (other == *this) return *this;
                 isLeaf = other.isLeaf;
                 offset = other.offset;
-                return *this;
-
             }
 
             // Return a new iterator which points to the n-next elements
@@ -293,8 +288,7 @@ namespace sjtu {
 
 
         BTree(const BTree& other) {
-            if (other == *this) {return *this;
-            }
+
             pFile = other.pFile;
             root = other.root;
             rootOffSet = other.rootOffSet;
@@ -322,47 +316,165 @@ namespace sjtu {
 
         ~BTree() {
             close_file();
-            // Todo Destructor
 
         }
 
+
         pair<iterator,OperationResult> insert_leafNode(const Key &key, const Value &value, leafNode &leaf) {
-            int cnt;
-            for (cnt = 0; cnt < leaf.dataSize; ++cnt) {
-                if (leaf.dataSize[cnt] == key) return pair<iterator,OperationResult> (iterator(nullptr),Fail);
-                if (key < leaf.dataSize[cnt]) break;
+            int l = 0, r = leaf.dataSize, mid = (l + r)/2;
+            while(l < r) {
+                if (key == leaf.data[mid]) return pair<iterator,OperationResult> (iterator(nullptr), Fail);
+                if (key < leaf.data[mid]) r = mid;
+                else l = mid + 1;
+                    mid = (l + r) / 2;
             }
+            int cnt = mid;
+
             for (int i = leaf.dataSize-1; i > cnt; --i) {
                 leaf.data[i+1].k = leaf.data[i].k;
                 leaf.data[i+1].value = leaf.data[i].value;
             }
-            leaf.data[cnt].k = key; leaf.data[cnt].value = value;
+            leaf.data[cnt+1].k = key; leaf.data[cnt+1].value = value;
             leaf.dataSize++;
             if (leaf.dataSize > L) split_node(leaf, key);
+            else writeleaf(&leaf, leaf.nodeOffset);
+            return pair<iterator,OperationResult> (iterator(nullptr),Success);
         }
 
-        void split_node(leafNode &leaf, const Key &key) {
+        void split_node(leafNode &leaf, const Key &key) { // Todo define if need to change the parent
             leafNode tmpLeaf;
             tmpLeaf.dataSize = leaf.dataSize - leaf.dataSize/2;
             int pos = leaf.dataSize / 2;
             for (int i = 0; i < tmpLeaf.dataSize; ++i) {
                 tmpLeaf.data[i] = leaf.data[i + pos];
             }
-            
-        }
-        // Insert: Insert certain Key-Value into the database
-
-        // Return a pair, the first of the pair is the iterator point to the new
-
-        // element, the second of the pair is Success if it is successfully inserted
-
-        pair<iterator, OperationResult> insert(const Key& key, const Value& value) {
-            if (root == NULL) {
-                root->data->k = key;
-                root->data->dataPos = 0;
-                root->dataSize++;
+            tmpLeaf.nodeOffset = End;
+            tmpLeaf.pre = leaf.nodeOffset; tmpLeaf.next = leaf.next;
+            if (leaf.next == 0) tailLeaf = tmpLeaf.nodeOffset;          //如果原来的叶子是最后一个叶子结点
+            else{
+                leafNode endLeaf;           //分裂前的next叶子
+                readLeaf(&endLeaf,tmpLeaf.next);
+                endLeaf.pre = tmpLeaf.nodeOffset;
+                writeleaf(&endLeaf,endLeaf.nodeOffset);
             }
-            // TODO insert function
+            End = tmpLeaf.nodeOffset + sizeof(leafNode);
+
+            writeleaf(&tmpLeaf,tmpLeaf.nodeOffset);
+            writeleaf(leaf, leaf.nodeOffset);
+            insert_interNode(key,leaf.parent,leaf.nodeOffset);
+        }
+
+        pair<iterator, OperationResult > insert_interNode(const Key &key, offset_t interoffset,offset_t leafoffset) {
+            interNode inter;
+            readInter(&inter,interoffset);
+            int l = 0, r = inter.dataSize-1, mid = (l + r)/2;
+            while(l < r) {
+                if (key < inter.data[mid]) r = mid;
+                else l = mid + 1;
+                mid = (l + r) / 2;
+            }
+
+            int pos = mid;
+            for (int i = inter.dataSize-1; i > pos;i--) {
+                inter.data[i+1] = inter.data[i];
+            }
+            inter.data[pos+1].k = key;
+            inter.data[pos+1].dataPos = leafoffset;
+            inter.dataSize++;
+            if (inter.dataSize > M) split_index(&inter,interoffset);
+            else writeInter(&inter,inter.offset);
+        }
+
+        void split_index(interNode &index, offset_t offset) {
+            interNode tmpNode;
+            tmpNode.isLeaf = index.isLeaf;
+            tmpNode.dataSize= index.dataSize - index.dataSize/2;
+            offset_t pos = index.dataSize / 2;
+            for (int i = 0; i < tmpNode.dataSize; ++i) {
+                tmpNode.data[i] = index.data[i+pos];
+            }
+            index.dataSize = index.dataSize /2;
+
+            if (tmpNode.isLeaf) {
+                leafNode leaf;
+                for (int i=0; i < tmpNode.dataSize; ++i){
+                    readLeaf(&leaf,tmpNode.data[i].dataPos);
+                    leaf.parent = tmpNode.offset;
+                    writeleaf(&leaf,leaf.nodeOffset);
+                }
+            }
+            else {
+                interNode inter;
+                for (int i = 0; i < tmpNode.dataSize; ++i) {
+                    readInter(&inter,tmpNode.data[i].dataPos);
+                    inter.parent = tmpNode.offset;
+                    writeInter(&inter,inter.offset);
+                }
+            }
+            //更新根节点
+            if (tmpNode.offset == rootOffSet) {
+                interNode newroot;
+                newroot.offset = End;
+                End += sizeof(interNode);
+                newroot.dataSize = 2;
+                newroot.data[0] = index.data[0];
+                newroot.data[1] = tmpNode.data[0];
+                index.parent = tmpNode.parent = newroot.offset;
+                root = newroot;
+                rootOffSet = newroot.offset;
+                writeInter(&newroot,newroot.offset);
+                writeInter(&tmpNode,tmpNode.offset);
+                writeInter(&index,index.offset);
+            }
+            else {
+                writeInter(&tmpNode,tmpNode.offset);
+                writeInter(&index,index.offset);
+                insert_interNode(tmpNode.data[0].k,tmpNode.parent,tmpNode.offset);
+            }
+
+        }
+
+        offset_t Findleaf(const Key &key, offset_t offset) {
+            interNode rt;
+            readInter(&rt,rootOffSet);
+            int low = 0, high = rt.dataSize-1,mid = (low + high)/2;
+            while (low < high) {
+                if (key < rt.data[mid]) low = mid;
+                else high = mid - 1;
+                mid = (low + high) / 2;
+            }
+            if (rt.isLeaf) {
+                /*leafNode leaf;
+                readLeaf(&leaf,rt.data[mid].dataPos);
+                low = 0; high = leaf.nodeOffset - 1; mid = (low + high) / 2;
+                while (low < high) {
+                    if (key < leaf.data[mid]) low = mid;
+                    else high = mid -1;
+                    mid = (low + high) /2;
+                }*/
+                return rt.data[mid].dataPos;
+            }
+            else {
+                Findleaf(key,rt.data[mid].dataPos);
+            }
+        }
+        /** Insert: Insert certain Key-Value into the database
+          *Return a pair, the first of the pair is the iterator point to the new
+          *element, the second of the pair is Success if it is successfully inserted
+          */
+        pair<iterator, OperationResult> insert(const Key& key, const Value& value) {
+            if (End == 0) {
+                root->data[0].k = key;
+                root->data[0].dataPos = 0;
+                root->dataSize++;
+                return pair<iterator,OperationResult >(iterator(nullptr),Success);
+            }
+
+            interNode inter;
+            leafNode leaf;
+            offset_t offset = Findleaf(key,rootOffSet);
+            readLeaf(leaf,offset);
+            return insert_leafNode(key,value,leaf);
 
         }
 
@@ -435,6 +547,23 @@ namespace sjtu {
         const_iterator find(const Key& key) const {}
 
         void BuildTree() {
+            End = 0;
+            headLeaf = tailLeaf = 0;
+            root->offset = End;
+            rootOffSet = 0;
+            End += sizeof(interNode);
+            //BTree
+            root->parent = 0;
+            root->dataSize = 1;
+            root->isLeaf = 1;
+
+            leafNode leaf;
+            leaf.nodeOffset = End;
+            root->data[0].dataPos = leaf.nodeOffset;
+            leaf.next = leaf.pre = 0;
+            leaf.dataSize = 0;
+            writeInter(root,rootOffSet);
+            writeleaf(leaf,leaf.nodeOffset);
 
         }
 
