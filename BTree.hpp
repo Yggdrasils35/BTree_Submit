@@ -2,8 +2,6 @@
 // Created by Yggdrasils on 2019/5/27.
 //
 
-#ifndef SJTU_BTREE_HPP
-#define SJTU_BTREE_HPP
 #include "utility.hpp"
 #include <cstring>
 #include <functional>
@@ -21,7 +19,7 @@ namespace sjtu {
     template <class Key, class Value, class Compare = std::less<Key> >
 
     class BTree {
-    typedef off_t offset_t;
+        typedef off_t offset_t;
     public:
         struct dataNodeLeaf                 //叶子结点数据
         {
@@ -192,8 +190,8 @@ namespace sjtu {
             }
 
             iterator() {
-               isLeaf = false;
-               offset = 0;
+                isLeaf = false;
+                offset = 0;
             }
 
             iterator(const iterator& other) {
@@ -288,7 +286,6 @@ namespace sjtu {
 
 
         BTree(const BTree& other) {
-
             pFile = other.pFile;
             root = other.root;
             rootOffSet = other.rootOffSet;
@@ -326,7 +323,7 @@ namespace sjtu {
                 if (key == leaf.data[mid]) return pair<iterator,OperationResult> (iterator(nullptr), Fail);
                 if (key < leaf.data[mid]) r = mid;
                 else l = mid + 1;
-                    mid = (l + r) / 2;
+                mid = (l + r) / 2;
             }
             int cnt = mid;
 
@@ -467,6 +464,9 @@ namespace sjtu {
                 root->data[0].k = key;
                 root->data[0].dataPos = 0;
                 root->dataSize++;
+                leafNode leaf;
+                readLeaf(&leaf,root->data[0].dataPos);
+                insert_leafNode(key,value,&leaf);
                 return pair<iterator,OperationResult >(iterator(nullptr),Success);
             }
 
@@ -542,16 +542,25 @@ namespace sjtu {
 
          */
 
+        Value at(Key key) {
+            offset_t offset = Findleaf(key,rootOffSet);
+            leafNode leaf;
+            readLeaf(&leaf,offset);
+            for (int i = 0; i < leaf.dataSize; ++i) {
+                if (key == leaf.data[i]) return leaf.data[i].value;
+            }
+        }
+
         iterator find(const Key& key) {}
 
         const_iterator find(const Key& key) const {}
 
         void BuildTree() {
             End = 0;
-            headLeaf = tailLeaf = 0;
             root->offset = End;
             rootOffSet = 0;
             End += sizeof(interNode);
+            headLeaf = tailLeaf = End;
             //BTree
             root->parent = 0;
             root->dataSize = 1;
@@ -559,6 +568,7 @@ namespace sjtu {
 
             leafNode leaf;
             leaf.nodeOffset = End;
+            End += sizeof(leafNode);
             root->data[0].dataPos = leaf.nodeOffset;
             leaf.next = leaf.pre = 0;
             leaf.dataSize = 0;
@@ -570,4 +580,4 @@ namespace sjtu {
     };
 
 }  // namespace sjtu
-#endif //SJTU_BTREE_HPP
+
