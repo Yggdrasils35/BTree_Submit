@@ -61,43 +61,81 @@ namespace sjtu {
             interNode():offset(0),parent(0),isLeaf(false),dataSize(1){}
         };
 
+        struct fileInfor
+        {
+            offset_t headLeaf;
+            offset_t tailLeaf;
+            offset_t End;
+            offset_t root;
+            size_t size;
+            fileInfor():headLeaf(0),tailLeaf(0),End(0),root(0),size(0){}
+        };
+
     private:
-        std::fstream pFile;
+        FILE *pFile;
         interNode *root;            //根结点
         offset_t rootOffSet;        //根结点的位置
         offset_t headLeaf;
         offset_t tailLeaf;
         offset_t End;
+        size_t sizeLeaf;
         char FileName[FileLength];
         bool isExist;
+        bool isOpen;
         char rwBuffer[MAXN];
 
-        // Your private members go here
+        /** 本来使用fstream读写文件
+         * 结果bug太多，操作不了
+         * 所以学习了方指导的例子
+         * 使用C风格读写文件
+         */
 
-        void openFile() {
+        inline void openFile() {
             isExist = 1;
-            if (!pFile.is_open()) {
-                pFile.open(FileName,std::ios::in| std::ios::out | std::ios::trunc);
-                if (!pFile) {
+            if (isOpen == 0) {
+                pFile = fopen(FileName, "rb+");
+                if (pFile == nullptr) {
                     isExist = 0;
-                    pFile.open(FileName,std::ios::in | std::ios::out);
+                    pFile = fopen(FileName, "w");
+                    fclose(pFile);
+                    pFile = fopen(FileName, "rb+");
                 }
-                /*else readLeaf(root,&rootOffSet);*/
+                //else readFile(&info, info_offset, 1, sizeof(basicInfo));
+                isOpen = 1;
+            }
+
+        }
+
+        inline void close_File() {
+            if (isOpen == 1) {
+                fclose(pFile);
+                isOpen = 0;
             }
         }
 
-        void close_file() {
-            if (pFile.is_open()) {
-                pFile.close();
-            }
+
+        inline void readFile(void *node, offset_t offset, size_t num, size_t size) const {
+
+            if (fseek(pFile, offset, SEEK_SET)) throw "open file failed!";
+            //将pFile中的内容读入place
+            fread(node, size, num, pFile);
+
         }
 
+
+
+        inline void writeFile(void *node, offset_t offset, size_t num, size_t size) const {
+            if (fseek(pFile, offset, SEEK_SET)) throw "open file failed!";
+            //将place中的内容写入pFile
+            fwrite(node, size, num, pFile);
+
+        }
         /**readLeaf():
          *      从文件中读入叶子结点
          *      给定偏移量offset
          *      返回是否成功读入
          */
-        inline void readLeaf(leafNode *p,offset_t offset) {
+        /*inline void readLeaf(leafNode *p,offset_t offset) {
             if (!pFile.is_open()) pFile.open(FileName,std::ios::in | std::ios::out);
             pFile.seekg(offset,std::ios::cur);
             if (!pFile.fail()) {
@@ -106,14 +144,14 @@ namespace sjtu {
             }
             pFile.read(rwBuffer,MAXN);
             memcpy(p,rwBuffer, sizeof(leafNode));
-        }
+        }*/
 
         /**readInter():
          *      从文件中读入内部结点
          *      给定偏移量offset
          *      返回是否成功读入
          */
-        inline void readInter(interNode *p, offset_t offset) {
+        /*inline void readInter(interNode *p, offset_t offset) {
             if (!pFile.is_open()) pFile.open(FileName,std::ios::in | std::ios::out);
             pFile.seekg(offset,std::ios::cur);
             if (!pFile.fail()) {
@@ -122,13 +160,13 @@ namespace sjtu {
             }
             pFile.read(rwBuffer,MAXN);
             memcpy(p,rwBuffer, sizeof(interNode));
-        }
+        }*/
 
         /**writeLeaf():
          *      将叶子结点写入文件末尾
          *      返回是否成功写入
          */
-        inline void writeleaf(leafNode *p,offset_t offset) {
+        /*inline void writeleaf(leafNode *p,offset_t offset) {
             if (!pFile.is_open()) pFile.open(FileName,std::ios::in | std::ios::out);
             if (offset == 0) {
                 pFile.seekg(0, std::ios_base::end);
@@ -143,13 +181,13 @@ namespace sjtu {
             memcpy(rwBuffer,p, sizeof(leafNode));
             pFile.write(rwBuffer, sizeof(char)*MAXN);
             pFile.flush();
-        }
+        }*/
 
         /**writeInter():
         *      将内部结点写入文件末尾
         *      返回是否成功写入
         */
-        inline void writeInter(interNode *p,offset_t offset) {
+        /*inline void writeInter(interNode *p,offset_t offset) {
             if (!pFile.is_open()) pFile.open(FileName,std::ios::in | std::ios::out);
             if (offset == 0) {
                 pFile.seekg(0, std::ios_base::end);
@@ -164,7 +202,7 @@ namespace sjtu {
             memcpy(rwBuffer,p, sizeof(interNode));
             pFile.write(rwBuffer, sizeof(char)*MAXN);
             pFile.flush();
-        }
+        }*/
 //===========================================file operation======================================//
 
     public:
@@ -197,6 +235,7 @@ namespace sjtu {
                 isLeaf = other.isLeaf;
                 offset = other.offset;
             }
+
 
             // Return a new iterator which points to the n-next elements
 
@@ -275,7 +314,7 @@ namespace sjtu {
         // Default Constructor and Copy Constructor
 
         BTree() {
-            headLeaf = tailLeaf = End = rootOffSet = 0;
+            headLeaf = tailLeaf = End = rootOffSet = sizeLeaf = 0;
             strcpy(FileName,"target.txt");
             openFile();
             if (!isExist) BuildTree();
@@ -290,6 +329,7 @@ namespace sjtu {
             headLeaf = other.headLeaf;
             tailLeaf = other.tailLeaf;
             End = other.End;
+            sizeLeaf = other.sizeLeaf;
             strcpy(FileName,other.FileName);
             isExist = other.isExist;
         }
@@ -304,21 +344,23 @@ namespace sjtu {
             headLeaf = other.headLeaf;
             tailLeaf = other.tailLeaf;
             End = other.End;
+            sizeLeaf = other.sizeLeaf;
             strcpy(FileName,other.FileName);
             isExist = other.isExist;
             return *this;
         }
 
         ~BTree() {
-            close_file();
+            close_File();
 
         }
 
 
         pair<iterator,OperationResult> insert_leafNode(const Key &key, const Value &value, leafNode &leaf) {
+            iterator ret;
             int l = 0, r = leaf.dataSize, mid = (l + r)/2;
             while(l < r) {
-                if (key == leaf.data[mid].k) return pair<iterator,OperationResult> (nullptr, Fail);
+                if (key == leaf.data[mid].k) return pair<iterator,OperationResult> (ret, Fail);
                 if (key < leaf.data[mid].k) r = mid;
                 else l = mid + 1;
                 mid = (l + r) / 2;
@@ -332,11 +374,11 @@ namespace sjtu {
             leaf.data[cnt+1].k = key; leaf.data[cnt+1].value = value;
             leaf.dataSize++;
             if (leaf.dataSize > L) split_node(&leaf, key);
-            else writeleaf(&leaf, leaf.nodeOffset);
-            return pair<iterator,OperationResult> (nullptr,Success);
+            else writeFile(&leaf, leaf.nodeOffset,1, sizeof(leafNode));
+            return pair<iterator,OperationResult> (ret,Success);
         }
 
-        void split_node(leafNode *leaf, const Key &key) { // Todo define if need to change the parent
+        void split_node(leafNode *leaf, const Key &key) {
             leafNode tmpLeaf;
             tmpLeaf.dataSize = leaf->dataSize - leaf->dataSize/2;
             int pos = leaf->dataSize / 2;
@@ -348,20 +390,20 @@ namespace sjtu {
             if (leaf->next == 0) tailLeaf = tmpLeaf.nodeOffset;          //如果原来的叶子是最后一个叶子结点
             else{
                 leafNode endLeaf;           //分裂前的next叶子
-                readLeaf(&endLeaf,tmpLeaf.next);
+                readFile(&endLeaf,tmpLeaf.next,1, sizeof(leafNode));
                 endLeaf.pre = tmpLeaf.nodeOffset;
-                writeleaf(&endLeaf,endLeaf.nodeOffset);
+                writeFile(&endLeaf,endLeaf.nodeOffset,1, sizeof(leafNode));
             }
             End = tmpLeaf.nodeOffset + sizeof(leafNode);
 
-            writeleaf(&tmpLeaf,tmpLeaf.nodeOffset);
-            writeleaf(&leaf, leaf->nodeOffset);
+            writeFile(&tmpLeaf,tmpLeaf.nodeOffset,1, sizeof(leafNode));
+            writeFile(&leaf, leaf->nodeOffset,1, sizeof(leafNode));
             insert_interNode(key,leaf->parent,leaf->nodeOffset);
         }
 
         pair<iterator, OperationResult > insert_interNode(const Key &key, offset_t interoffset,offset_t leafoffset) {
             interNode inter;
-            readInter(&inter,interoffset);
+            readFile(&inter,interoffset,1, sizeof(interNode));
             int l = 0, r = inter.dataSize-1, mid = (l + r)/2;
             while(l < r) {
                 if (key < inter.data[mid].k) r = mid;
@@ -377,7 +419,7 @@ namespace sjtu {
             inter.data[pos+1].dataPos = leafoffset;
             inter.dataSize++;
             if (inter.dataSize > M) split_index(&inter,interoffset);
-            else writeInter(&inter,inter.offset);
+            else writeFile(&inter,inter.offset,1, sizeof(interNode));
         }
 
         void split_index(interNode *index, offset_t offset) {
@@ -393,17 +435,17 @@ namespace sjtu {
             if (tmpNode.isLeaf) {
                 leafNode leaf;
                 for (int i=0; i < tmpNode.dataSize; ++i){
-                    readLeaf(&leaf,tmpNode.data[i].dataPos);
+                    readFile(&leaf,tmpNode.data[i].dataPos,1, sizeof(leafNode));
                     leaf.parent = tmpNode.offset;
-                    writeleaf(&leaf,leaf.nodeOffset);
+                    writeFile(&leaf,leaf.nodeOffset,1, sizeof(leafNode));
                 }
             }
             else {
                 interNode inter;
                 for (int i = 0; i < tmpNode.dataSize; ++i) {
-                    readInter(&inter,tmpNode.data[i].dataPos);
+                    readFile(&inter,tmpNode.data[i].dataPos,1, sizeof(interNode));
                     inter.parent = tmpNode.offset;
-                    writeInter(&inter,inter.offset);
+                    writeFile(&inter,inter.offset,1, sizeof(interNode));
                 }
             }
             //更新根节点
@@ -415,15 +457,15 @@ namespace sjtu {
                 newroot.data[0] = index->data[0];
                 newroot.data[1] = tmpNode.data[0];
                 index->parent = tmpNode.parent = newroot.offset;
-                root = newroot;
+                root = &newroot;
                 rootOffSet = newroot.offset;
-                writeInter(&newroot,newroot.offset);
-                writeInter(&tmpNode,tmpNode.offset);
-                writeInter(&index,index->offset);
+                writeFile(&newroot,newroot.offset,1, sizeof(interNode));
+                writeFile(&tmpNode,tmpNode.offset,1, sizeof(interNode));
+                writeFile(&index,index->offset,1, sizeof(interNode));
             }
             else {
-                writeInter(&tmpNode,tmpNode.offset);
-                writeInter(&index,index->offset);
+                writeFile(&tmpNode,tmpNode.offset,1, sizeof(interNode));
+                writeFile(&index,index->offset,1, sizeof(interNode));
                 insert_interNode(tmpNode.data[0].k,tmpNode.parent,tmpNode.offset);
             }
 
@@ -431,7 +473,7 @@ namespace sjtu {
 
         offset_t Findleaf(const Key &key, offset_t offset) {
             interNode rt;
-            readInter(&rt,rootOffSet);
+            readFile(&rt,rootOffSet,1, sizeof(interNode));
             int low = 0, high = rt.dataSize-1,mid = (low + high)/2;
             while (low < high) {
                 if (key < rt.data[mid].k) low = mid;
@@ -458,12 +500,13 @@ namespace sjtu {
           *element, the second of the pair is Success if it is successfully inserted
           */
         pair<iterator, OperationResult> insert(const Key& key, const Value& value) {
+            sizeLeaf++;
             if (End == 0) {
                 root->data[0].k = key;
                 root->data[0].dataPos = 0;
                 root->dataSize++;
                 leafNode leaf;
-                readLeaf(&leaf,root->data[0].dataPos);
+                readFile(&leaf,root->data[0].dataPos,1, sizeof(leafNode));
                 pair<iterator,OperationResult > ret = insert_leafNode(key,value,leaf);
                 return ret;
             }
@@ -471,7 +514,7 @@ namespace sjtu {
             interNode inter;
             leafNode leaf;
             offset_t offset = Findleaf(key,rootOffSet);
-            readLeaf(&leaf,offset);
+            readFile(&leaf,offset,1, sizeof(leafNode));
             return insert_leafNode(key,value,leaf);
 
         }
@@ -504,11 +547,11 @@ namespace sjtu {
 
         // Check whether this BTree is empty
 
-        bool empty() const {}
+        bool empty() const { return !sizeLeaf;}
 
         // Return the number of <K,V> pairs
 
-        size_t size() const {}
+        size_t size() const { return sizeLeaf;}
 
         // Clear the BTree
 
@@ -543,7 +586,7 @@ namespace sjtu {
         Value at(Key key) {
             offset_t offset = Findleaf(key,rootOffSet);
             leafNode leaf;
-            readLeaf(&leaf,offset);
+            readFile(&leaf,offset,1, sizeof(leafNode));
             for (int i = 0; i < leaf.dataSize; ++i) {
                 if (key == leaf.data[i].k) return leaf.data[i].value;
             }
@@ -570,8 +613,8 @@ namespace sjtu {
             root->data[0].dataPos = leaf.nodeOffset;
             leaf.next = leaf.pre = 0;
             leaf.dataSize = 0;
-            writeInter(root,rootOffSet);
-            writeleaf(&leaf,leaf.nodeOffset);
+            writeFile(root,rootOffSet,1, sizeof(interNode));
+            writeFile(&leaf,leaf.nodeOffset,1, sizeof(leafNode));
 
         }
 
