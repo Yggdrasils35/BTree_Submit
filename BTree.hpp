@@ -61,6 +61,16 @@ namespace sjtu {
             interNode():offset(0),parent(0),isLeaf(false),dataSize(1){}
         };
 
+        struct fileInfor
+        {
+            offset_t headLeaf;
+            offset_t tailLeaf;
+            offset_t End;
+            offset_t root;
+            size_t size;
+            fileInfor():headLeaf(0),tailLeaf(0),End(0),root(0),size(0){}
+        };
+
     private:
         FILE *pFile;
         interNode *root;            //根结点
@@ -90,7 +100,6 @@ namespace sjtu {
                     fclose(pFile);
                     pFile = fopen(FileName, "rb+");
                 }
-                //else readFile(&info, info_offset, 1, sizeof(basicInfo));
                 isOpen = 1;
             }
 
@@ -357,16 +366,20 @@ namespace sjtu {
         //This is right
         pair<iterator,OperationResult> insert_leafNode(const Key &key, const Value &value, leafNode &leaf) {
             iterator ret;
-            int l = 0, r = leaf.dataSize, mid = (l + r)/2;
+            /*int l = 0, r = leaf.dataSize, mid = (l + r)/2;
             while(l < r) {
                 if (key == leaf.data[mid].k) return pair<iterator,OperationResult> (ret, Fail);
                 if (key < leaf.data[mid].k) r = mid;
                 else l = mid + 1;
                 mid = (l + r) / 2;
             }
-            int cnt = mid;
-
-            for (int i = leaf.dataSize-1; i > cnt; --i) {
+            int cnt = mid;*/
+            int cnt = 0;
+            for (cnt = 0; cnt < leaf.dataSize; ++cnt) {
+                if (key < leaf.data[cnt].k) break;
+            }
+            //尝试过使用二分查找，最后还是使用顺序查找
+            for (int i = leaf.dataSize-1; i >= cnt; --i) {
                 leaf.data[i+1].k = leaf.data[i].k;
                 leaf.data[i+1].value = leaf.data[i].value;
             }
@@ -385,7 +398,7 @@ namespace sjtu {
                 tmpLeaf.data[i] = leaf->data[i + pos];
             }
             tmpLeaf.nodeOffset = End;
-            tmpLeaf.pre = leaf->nodeOffset; tmpLeaf.next = leaf->next;
+            tmpLeaf.pre = leaf->nodeOffset; tmpLeaf.next = leaf->next;leaf->next = tmpLeaf.nodeOffset;
             if (leaf->next == 0) tailLeaf = tmpLeaf.nodeOffset;          //如果原来的叶子是最后一个叶子结点
             else{
                 leafNode endLeaf;           //分裂前的next叶子
@@ -403,15 +416,19 @@ namespace sjtu {
         pair<iterator, OperationResult > insert_interNode(const Key &key, offset_t interoffset,offset_t leafoffset) {
             interNode inter;
             readIndex(&inter,interoffset);
-            int l = 0, r = inter.dataSize-1, mid = (l + r)/2;
+            /*int l = 0, r = inter.dataSize-1, mid = (l + r)/2;
             while(l < r) {
                 if (key < inter.data[mid].k) r = mid;
                 else l = mid + 1;
                 mid = (l + r) / 2;
+            }*/
+            int mid;
+            for (mid = 0; mid < inter.dataSize; ++mid) {
+                if(key < inter.data[mid].k) break;
             }
-
+            //尝试了二分查，最后决定用顺序查
             int pos = mid;
-            for (int i = inter.dataSize-1; i > pos;i--) {
+            for (int i = inter.dataSize-1; i >= pos;i--) {
                 inter.data[i+1] = inter.data[i];
             }
             inter.data[pos+1].k = key;
