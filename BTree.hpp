@@ -61,16 +61,6 @@ namespace sjtu {
             interNode():offset(0),parent(0),isLeaf(false),dataSize(1){}
         };
 
-        struct fileInfor
-        {
-            offset_t headLeaf;
-            offset_t tailLeaf;
-            offset_t End;
-            offset_t root;
-            size_t size;
-            fileInfor():headLeaf(0),tailLeaf(0),End(0),root(0),size(0){}
-        };
-
     private:
         FILE *pFile;
         interNode *root;            //根结点
